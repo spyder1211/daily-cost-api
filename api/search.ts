@@ -74,16 +74,33 @@ export default async function handler(
 
     return res.status(200).json({ products });
   } catch (error: any) {
-    console.error('Amazon PA-API error:', error);
+    console.error('Amazon PA-API error:', JSON.stringify(error, null, 2));
 
     // Handle specific PA-API errors
     if (error.status === 429) {
       return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
     }
 
+    // PA-API specific error codes
+    const errorCode = error.__type || error.code || '';
+    if (errorCode.includes('TooManyRequests')) {
+      return res.status(429).json({ error: 'Rate limit exceeded' });
+    }
+    if (errorCode.includes('InvalidPartnerTag') || error.message?.includes('InvalidPartnerTag')) {
+      return res.status(403).json({ error: 'Invalid Partner Tag', details: 'アソシエイトタグが無効です' });
+    }
+    if (errorCode.includes('AccessDenied') || error.message?.includes('Forbidden')) {
+      return res.status(403).json({
+        error: 'PA-API Access Denied',
+        details: 'PA-APIアクセスが拒否されました。アソシエイトアカウントのPA-API利用資格を確認してください。',
+        hint: '日本では過去30日以内に3件以上の適格売上が必要です。'
+      });
+    }
+
     return res.status(500).json({
       error: 'Failed to search products',
       message: error.message || 'Unknown error',
+      code: errorCode || undefined,
     });
   }
 }
