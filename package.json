@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "vercel dev",
-    "build": "tsc",
-    "lint": "tsc --noEmit"
+    "dev": "vercel dev"
   },
   "dependencies": {
     "amazon-paapi": "^1.0.7"
