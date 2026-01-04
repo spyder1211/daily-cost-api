@@ -1,21 +1,31 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import amazonPaapi from 'amazon-paapi';
 
-interface AmazonProduct {
-  asin: string;
+interface Product {
+  id: string;
   title: string;
   imageUrl: string | null;
   price: number | null;
   detailPageUrl: string;
 }
 
-const commonParameters = {
-  AccessKey: process.env.AMAZON_ACCESS_KEY || '',
-  SecretKey: process.env.AMAZON_SECRET_KEY || '',
-  PartnerTag: process.env.AMAZON_PARTNER_TAG || '',
-  PartnerType: 'Associates',
-  Marketplace: 'www.amazon.co.jp',
-};
+interface RakutenItem {
+  Item: {
+    itemCode: string;
+    itemName: string;
+    itemPrice: number;
+    mediumImageUrls: Array<{ imageUrl: string }>;
+    itemUrl: string;
+  };
+}
+
+interface RakutenResponse {
+  Items?: RakutenItem[];
+  error?: string;
+  error_description?: string;
+}
+
+const RAKUTEN_APP_ID = process.env.RAKUTEN_APP_ID;
+const RAKUTEN_API_URL = 'https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601';
 
 export default async function handler(
   req: VercelRequest,
@@ -39,68 +49,44 @@ export default async function handler(
   }
 
   // Check environment variables
-  if (!process.env.AMAZON_ACCESS_KEY || !process.env.AMAZON_SECRET_KEY || !process.env.AMAZON_PARTNER_TAG) {
-    console.error('Missing Amazon PA-API credentials');
+  if (!RAKUTEN_APP_ID) {
+    console.error('Missing RAKUTEN_APP_ID');
     return res.status(500).json({ error: 'Server configuration error' });
   }
 
   try {
-    const requestParameters = {
-      Keywords: query,
-      SearchIndex: 'All',
-      ItemCount: 10,
-      Resources: [
-        'Images.Primary.Large',
-        'ItemInfo.Title',
-        'Offers.Listings.Price',
-      ],
-    };
+    const url = `${RAKUTEN_API_URL}?applicationId=${RAKUTEN_APP_ID}&keyword=${encodeURIComponent(query)}&format=json&hits=10`;
 
-    const response = await amazonPaapi.SearchItems(commonParameters, requestParameters);
+    const response = await fetch(url);
+    const data: RakutenResponse = await response.json();
 
-    if (!response.SearchResult?.Items) {
+    if (data.error) {
+      console.error('Rakuten API error:', data.error, data.error_description);
+      return res.status(500).json({
+        error: 'Rakuten API error',
+        message: data.error_description || data.error,
+      });
+    }
+
+    if (!data.Items || data.Items.length === 0) {
       return res.status(200).json({ products: [] });
     }
 
-    const products: AmazonProduct[] = response.SearchResult.Items.map((item: any) => ({
-      asin: item.ASIN,
-      title: item.ItemInfo?.Title?.DisplayValue || 'タイトル不明',
-      imageUrl: item.Images?.Primary?.Large?.URL || null,
-      price: item.Offers?.Listings?.[0]?.Price?.Amount
-        ? Math.round(item.Offers.Listings[0].Price.Amount)
-        : null,
-      detailPageUrl: item.DetailPageURL || `https://www.amazon.co.jp/dp/${item.ASIN}`,
+    const products: Product[] = data.Items.map(({ Item }) => ({
+      id: Item.itemCode,
+      title: Item.itemName,
+      imageUrl: Item.mediumImageUrls?.[0]?.imageUrl?.replace('?_ex=128x128', '?_ex=300x300') || null,
+      price: Item.itemPrice,
+      detailPageUrl: Item.itemUrl,
     }));
 
     return res.status(200).json({ products });
   } catch (error: any) {
-    console.error('Amazon PA-API error:', JSON.stringify(error, null, 2));
-
-    // Handle specific PA-API errors
-    if (error.status === 429) {
-      return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
-    }
-
-    // PA-API specific error codes
-    const errorCode = error.__type || error.code || '';
-    if (errorCode.includes('TooManyRequests')) {
-      return res.status(429).json({ error: 'Rate limit exceeded' });
-    }
-    if (errorCode.includes('InvalidPartnerTag') || error.message?.includes('InvalidPartnerTag')) {
-      return res.status(403).json({ error: 'Invalid Partner Tag', details: 'アソシエイトタグが無効です' });
-    }
-    if (errorCode.includes('AccessDenied') || error.message?.includes('Forbidden')) {
-      return res.status(403).json({
-        error: 'PA-API Access Denied',
-        details: 'PA-APIアクセスが拒否されました。アソシエイトアカウントのPA-API利用資格を確認してください。',
-        hint: '日本では過去30日以内に3件以上の適格売上が必要です。'
-      });
-    }
+    console.error('Rakuten API error:', error);
 
     return res.status(500).json({
       error: 'Failed to search products',
       message: error.message || 'Unknown error',
-      code: errorCode || undefined,
     });
   }
 }
