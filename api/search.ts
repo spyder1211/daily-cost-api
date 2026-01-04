@@ -60,7 +60,7 @@ export default async function handler(
   }
 
   try {
-    const url = `${RAKUTEN_API_URL}?applicationId=${RAKUTEN_APP_ID}&keyword=${encodeURIComponent(query)}&format=json&hits=10`;
+    const url = `${RAKUTEN_API_URL}?applicationId=${RAKUTEN_APP_ID}&keyword=${encodeURIComponent(query)}&format=json&hits=20`;
 
     const response = await fetch(url);
     const data: RakutenResponse = await response.json();
