@@ -42,10 +42,15 @@ export default async function handler(
   }
 
   const { q } = req.query;
-  const query = Array.isArray(q) ? q[0] : q;
+  let query = Array.isArray(q) ? q[0] : q;
 
   if (!query || query.trim().length < 2) {
     return res.status(400).json({ error: 'Query parameter "q" is required (min 2 characters)' });
+  }
+
+  // 楽天APIは128文字制限
+  if (query.length > 128) {
+    query = query.substring(0, 128);
   }
 
   // Check environment variables
